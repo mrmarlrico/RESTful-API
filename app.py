@@ -2,6 +2,7 @@ from flask import Flask, request, jsonify, render_template, redirect, url_for, m
 import jwt
 from datetime import datetime, timedelta
 from werkzeug.security import generate_password_hash, check_password_hash
+from werkzeug.utils import secure_filename
 import pymysql.cursors
 import pymysql
 import os
@@ -18,10 +19,13 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = 'super-secret'  # Change this!
 
 # Set the maximum allowed file size to 16 megabytes
-app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
+app.config['MAX_FILE_SIZE'] = 16 * 1024 * 1024
 
 # Set the path to the upload folder
 app.config['UPLOAD_FOLDER'] = 'uploads'
+
+app.config['ALLOWED_EXTENSIONS'] = ALLOWED_EXTENSIONS
+
 
 # Connect to the database
 conn = pymysql.connect(
@@ -98,32 +102,28 @@ def login():
 @app.route('/welcome', methods=['GET'])
 def welcome():
     token = request.args.get('token')
-    print(token)
-    if token:
-        try:
-            payload = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
-            username = payload['sub']
-            return render_template('welcome.html', username=username)
-        except jwt.ExpiredSignatureError:
-            return jsonify({'error': 'Token has expired.'}), 401
-        except jwt.InvalidTokenError:
-            return jsonify({'error': 'Invalid token.'}), 401
-    else:
-        return render_template('login.html', message='Authorization header not found.'), 401
+    if not token:
+        return render_template('login.html', message='Token not found.'), 401
 
-# Function to check if a file has an allowed extension
-def allowed_file(filename):
-    return '.' in filename and \
-           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+    try:
+        payload = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
+        username = payload['sub']
+    except jwt.ExpiredSignatureError:
+        return jsonify({'error': 'Token has expired.'}), 401
+    except jwt.InvalidTokenError:
+        return jsonify({'error': 'Invalid token.'}), 401
+
+    upload_url = url_for('upload', token=token)
+    return render_template('welcome.html', username=username, upload_url=upload_url)
 
 
 @app.route('/upload', methods=['GET', 'POST'])
 def upload():
-    auth_header = request.headers.get('Authorization')
-    if not auth_header:
-        return render_template('login.html', message='Authorization header not found.'), 401
+    token = request.args.get('token')
+    print(token)
+    if not token:
+        return render_template('login.html', message='Token not found.'), 401
 
-    token = auth_header.split(' ')[1]
     try:
         payload = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
         username = payload['sub']
@@ -148,6 +148,7 @@ def upload():
             return render_template('upload.html', message='File uploaded successfully.')
 
     return render_template('upload.html')
+
 
 
 if __name__ == '__main__':
