@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, render_template, redirect, url_for, make_response, session
+from flask import Flask, request, jsonify, render_template, redirect, url_for, make_response, session, send_from_directory
 import jwt
 from datetime import datetime, timedelta
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -173,6 +173,28 @@ def upload():
 
     return render_template('upload.html')
 
+@app.route('/public')
+def public():
+    # Get all unique usernames from the database
+    cur = conn.cursor()
+    cur.execute("SELECT DISTINCT username FROM uploads")
+    usernames = [row[0] for row in cur.fetchall()]
+
+    # Create a dictionary to store the uploads for each user
+    uploads = {}
+    for username in usernames:
+        cur.execute("SELECT filename FROM uploads WHERE username = %s", (username,))
+        filenames = [row[0] for row in cur.fetchall()]
+        uploads[username] = filenames
+
+    # Render the public profile page with all the uploads
+    return render_template('public.html', uploads=uploads)
+
+
+
+@app.route('/uploads/<filename>')
+def uploaded_file(filename):
+    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 
 
 

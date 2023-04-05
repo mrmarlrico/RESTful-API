@@ -1,14 +1,11 @@
-<!DOCTYPE html>
-<html>
-  <head>
-    <title>Welcome</title>
-  </head>
-  <body>
-    <h1>Welcome to my Flask app</h1>
-    <p>This is the landing page.</p>
-    <p>
-      Please <a href="/login">login</a> or <a href="/register">register</a> to
-      continue.
-    </p>
-  </body>
-</html>
+{% extends "base.html" %} {% block content %}
+<div class="container">
+  <h1>CPSC 449 - Midterm Project</h1>
+  <p>Please select an option below:</p>
+  <div class="buttons">
+    <a href="{{ url_for('login') }}" class="btn btn-primary">Login</a>
+    <a href="{{ url_for('register') }}" class="btn btn-secondary">Register</a>
+    <a href="{{ url_for('public') }}" class="btn btn-tertiary">Public</a>
+  </div>
+</div>
+{% endblock %}

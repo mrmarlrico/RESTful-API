@@ -1,0 +1,14 @@
+{% for username, filenames in uploads.items() %}
+<a href="{{ url_for('index') }}" class="btn btn-secondary">Back</a>
+
+<h3>{{ username }}</h3>
+<ul>
+  {% for filename in filenames %}
+  <li>
+    {{ filename }}
+    <br />
+    <img src="{{ url_for('uploaded_file', filename=filename) }}" width="500" />
+  </li>
+  {% endfor %}
+</ul>
+{% endfor %}

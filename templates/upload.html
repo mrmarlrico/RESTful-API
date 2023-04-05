@@ -14,5 +14,8 @@
       <br /><br />
       <input type="submit" value="Upload" />
     </form>
+    <a href="{{ url_for('welcome', token=session.get('token')) }}"
+      >Back to Welcome Page</a
+    >
   </body>
 </html>
