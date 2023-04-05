@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, render_template, redirect, url_for, make_response
+from flask import Flask, request, jsonify, render_template, redirect, url_for, make_response, session
 import jwt
 from datetime import datetime, timedelta
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -6,8 +6,6 @@ from werkzeug.utils import secure_filename
 import pymysql.cursors
 import pymysql
 import os
-
-
 
 
 # Set the allowed file extensions
@@ -91,7 +89,7 @@ def login():
                 'exp': datetime.utcnow() + timedelta(days=1)
             }
             access_token = jwt.encode(payload, app.config['SECRET_KEY'], algorithm='HS256')
-            print(access_token)
+            session['token'] = access_token
             return redirect(url_for('welcome', token=access_token))
 
         else:
@@ -99,9 +97,19 @@ def login():
 
     return render_template('login.html')
 
+@app.route('/logout')
+def logout():
+    # Clear the session cookie
+    session.pop('token', None)
+    session.clear()
+
+    # Redirect the user to the login page
+    return redirect(url_for('login'))
+
 @app.route('/welcome', methods=['GET'])
 def welcome():
-    token = request.args.get('token')
+    
+    token = session.get('token')
     if not token:
         return render_template('login.html', message='Token not found.'), 401
 
@@ -114,13 +122,17 @@ def welcome():
         return jsonify({'error': 'Invalid token.'}), 401
 
     upload_url = url_for('upload', token=token)
-    return render_template('welcome.html', username=username, upload_url=upload_url)
+    response = make_response(render_template('welcome.html', username=username,  upload_url=upload_url))
+    response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+    response.headers['Pragma'] = 'no-cache'
+    response.headers['Expires'] = '0'
+
+    return response
 
 
 @app.route('/upload', methods=['GET', 'POST'])
 def upload():
-    token = request.args.get('token')
-    print(token)
+    token = session.get('token')
     if not token:
         return render_template('login.html', message='Token not found.'), 401
 
@@ -145,9 +157,22 @@ def upload():
                 return render_template('upload.html', message='File size is too large. Maximum allowed file size: ' + str(app.config['MAX_FILE_SIZE']) + ' bytes'), 400
 
             file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
-            return render_template('upload.html', message='File uploaded successfully.')
+
+            # insert the username and filename into the database
+            cur = conn.cursor()
+            cur.execute("INSERT INTO uploads (username, filename) VALUES (%s, %s)", (username, filename))
+            conn.commit()
+            cur.close()
+
+            response = make_response(render_template('upload.html', message='File uploaded successfully.'))
+            response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+            response.headers['Pragma'] = 'no-cache'
+            response.headers['Expires'] = '0'
+
+            return response
 
     return render_template('upload.html')
+
 
 
 
