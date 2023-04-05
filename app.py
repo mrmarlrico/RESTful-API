@@ -1,39 +1,35 @@
-from flask import Flask, request, jsonify, render_template
-from flask_jwt_extended import create_access_token, jwt_required, JWTManager
-# from flask_uploads import UploadSet, configure_uploads, IMAGES
-# from werkzeug.utils import secure_filename
-# from flask_bcrypt import generate_password_hash, check_password_hash
+from flask import Flask, request, jsonify, render_template, redirect, url_for, make_response
+import jwt
+from datetime import datetime, timedelta
 from werkzeug.security import generate_password_hash, check_password_hash
 import pymysql.cursors
 import pymysql
 import os
 
 
-# Define the allowed file types
-# ALLOWED_EXTENSIONS = {'txt', 'pdf', 'png', 'jpg', 'jpeg', 'gif'}
+
+
+# Set the allowed file extensions
+ALLOWED_EXTENSIONS = {'txt', 'pdf', 'png', 'jpg', 'jpeg', 'gif'}
 
 app = Flask(__name__)
 
 # Configure JWT
-app.config['JWT_SECRET_KEY'] = 'super-secret'  # Change this!
+app.config['SECRET_KEY'] = 'super-secret'  # Change this!
 
-# Configure file uploads
-# app.config['UPLOADED_FILES_DEST'] = 'uploads'
-# app.config['UPLOADED_FILES_ALLOW'] = IMAGES
-# app.config['UPLOADED_FILES_DENY'] = (['exe', 'py', 'sh', 'php', 'js'])
-# app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16 MB
-# files = UploadSet('files', ('txt', 'pdf', 'png', 'jpg', 'jpeg', 'gif'))
-# configure_uploads(app, files)
+# Set the maximum allowed file size to 16 megabytes
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
 
-jwt = JWTManager(app)
+# Set the path to the upload folder
+app.config['UPLOAD_FOLDER'] = 'uploads'
 
 # Connect to the database
 conn = pymysql.connect(
-        host='localhost',
-        user='root', 
-        password = "Rico4321!",
-        db='449_db',
-    )
+    host='localhost',
+    user='root', 
+    password = "Rico4321!",
+    db='449_db',
+)
 
 # Create a user model with username and password fields
 class User:
@@ -44,7 +40,6 @@ class User:
 @app.route('/')
 def index():
     return render_template('index.html')
-
 
 # Implement a registration endpoint that creates a new user
 @app.route('/register', methods=['GET', 'POST'])
@@ -70,7 +65,6 @@ def register():
     return render_template('register.html')
 
 
-# Implement a login endpoint that authenticates the user and returns a JWT token
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
@@ -88,54 +82,72 @@ def login():
 
         if check_password_hash(hashed_password, password):
             # Create a JWT token for the user
-            access_token = create_access_token(identity=user[0])
+            payload = {
+                'sub': user[1],
+                'exp': datetime.utcnow() + timedelta(days=1)
+            }
+            access_token = jwt.encode(payload, app.config['SECRET_KEY'], algorithm='HS256')
+            print(access_token)
+            return redirect(url_for('welcome', token=access_token))
 
-            return jsonify({'access_token': access_token}), 200
         else:
             return render_template('login.html', message='Invalid credentials.')
 
     return render_template('login.html')
 
+@app.route('/welcome', methods=['GET'])
+def welcome():
+    token = request.args.get('token')
+    print(token)
+    if token:
+        try:
+            payload = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
+            username = payload['sub']
+            return render_template('welcome.html', username=username)
+        except jwt.ExpiredSignatureError:
+            return jsonify({'error': 'Token has expired.'}), 401
+        except jwt.InvalidTokenError:
+            return jsonify({'error': 'Invalid token.'}), 401
+    else:
+        return render_template('login.html', message='Authorization header not found.'), 401
 
-# Implement a welcome page after successful login
-# @app.route('/welcome', methods=['GET'])
-# @jwt_required()
-# def welcome():
-#     current_user = get_jwt_identity()
-#     return render_template('welcome.html', username=current_user)
+# Function to check if a file has an allowed extension
+def allowed_file(filename):
+    return '.' in filename and \
+           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
-# # Implement an endpoint for file upload
-# @app.route('/upload', methods=['GET', 'POST'])
-# @jwt_required()
-# def upload():
-#     if request.method == 'POST':
-#         # Get the uploaded file and validate its type and size
-#         file = request.files.get('file')
-#         if file and allowed_file(file.filename) and allowed_size(file):
-#             # Save the uploaded file in a secure location
-#             filename = secure_filename(file.filename)
-#             file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
 
-#             return jsonify({'message': 'File uploaded successfully.'}), 200
-#         else:
-#             return jsonify({'message': 'Invalid file.'}), 400
+@app.route('/upload', methods=['GET', 'POST'])
+def upload():
+    auth_header = request.headers.get('Authorization')
+    if not auth_header:
+        return render_template('login.html', message='Authorization header not found.'), 401
 
-#     return render_template('upload.html')
+    token = auth_header.split(' ')[1]
+    try:
+        payload = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
+        username = payload['sub']
+    except jwt.ExpiredSignatureError:
+        return render_template('login.html', message='Token has expired.'), 401
+    except jwt.InvalidTokenError:
+        return render_template('login.html', message='Invalid token.'), 401
 
-# # Function to check if a file is allowed
-# def allowed_file(filename):
-#     return '.' in filename and \
-#            filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+    if request.method == 'POST':
+        file = request.files['file']
+        if file:
+            filename = secure_filename(file.filename)
+            if filename.split('.')[-1].lower() not in app.config['ALLOWED_EXTENSIONS']:
+                return render_template('upload.html', message='Invalid file type. Allowed file types: ' + ', '.join(app.config['ALLOWED_EXTENSIONS'])), 400
 
-# # Function to check if a file size is allowed
-# def allowed_file_size(file):
-#     return file.content_length <= app.config['MAX_CONTENT_LENGTH']
+            file_size = len(file.read())
+            file.seek(0)
+            if file_size > app.config['MAX_FILE_SIZE']:
+                return render_template('upload.html', message='File size is too large. Maximum allowed file size: ' + str(app.config['MAX_FILE_SIZE']) + ' bytes'), 400
 
-# Implement a protected endpoint that requires a valid JWT token to access
-# @app.route('/protected', methods=['GET'])
-# @jwt_required()
-# def protected():
-#     return jsonify({'message': 'You are authorized to access this endpoint.'}), 200
+            file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+            return render_template('upload.html', message='File uploaded successfully.')
+
+    return render_template('upload.html')
 
 
 if __name__ == '__main__':
