@@ -155,8 +155,6 @@ def upload():
         file = request.files['file']
         if not file:
             return render_template('upload.html', message='No file selected.'), 400
-        if file.content_length == 0:
-            return render_template('upload.html', message='Empty file selected.'), 400
         if file:
             filename = secure_filename(file.filename)
             if filename.split('.')[-1].lower() not in app.config['ALLOWED_EXTENSIONS']:
