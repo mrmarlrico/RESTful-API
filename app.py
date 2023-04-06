@@ -22,6 +22,7 @@ app.config['MAX_FILE_SIZE'] = 16 * 1024 * 1024
 # Set the path to the upload folder
 app.config['UPLOAD_FOLDER'] = 'uploads'
 
+# Set the allowed file extenstions
 app.config['ALLOWED_EXTENSIONS'] = ALLOWED_EXTENSIONS
 
 
@@ -33,17 +34,18 @@ conn = pymysql.connect(
     db='449_db',
 )
 
-# Create a user model with username and password fields
+# User model with username and password fields
 class User:
     def __init__(self, username, password):
         self.username = username
         self.password = password
 
+# Root route
 @app.route('/')
 def index():
     return render_template('index.html')
 
-# Implement a registration endpoint that creates a new user
+# Registration endpoint that creates a new user
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     if request.method == 'POST':
@@ -62,11 +64,11 @@ def register():
         cursor.execute("INSERT INTO users (username, password) VALUES (%s, %s)", (user.username, user.password.encode('utf-8')))
         conn.commit()
 
-        return render_template('login.html', message='User created successfully.')
+        return render_template('register.html', message='User created successfully.')
 
     return render_template('register.html')
 
-
+# Login endpoint that login users
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
@@ -82,6 +84,7 @@ def login():
 
         hashed_password = user[2]
 
+        # Check if the password matches for the user
         if check_password_hash(hashed_password, password):
             # Create a JWT token for the user
             payload = {
@@ -97,22 +100,22 @@ def login():
 
     return render_template('login.html')
 
+# Logout endpoint
 @app.route('/logout')
 def logout():
-    # Clear the session cookie
+    # Clear the session cookie and token
     session.pop('token', None)
     session.clear()
 
     # Redirect the user to the login page
     return redirect(url_for('login'))
 
+# Protected welcome endpoint for logged in users
 @app.route('/welcome', methods=['GET'])
 def welcome():
-    
     token = session.get('token')
     if not token:
         return render_template('login.html', message='Token not found.'), 401
-
     try:
         payload = jwt.decode(token, app.config['SECRET_KEY'], algorithms=['HS256'])
         username = payload['sub']
@@ -122,6 +125,8 @@ def welcome():
         return jsonify({'error': 'Invalid token.'}), 401
 
     upload_url = url_for('upload', token=token)
+
+    # Make sure token is not saved when logging out or when returning to the page 
     response = make_response(render_template('welcome.html', username=username,  upload_url=upload_url))
     response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
     response.headers['Pragma'] = 'no-cache'
@@ -130,6 +135,7 @@ def welcome():
     return response
 
 
+# Protected upload endpoint for logged in users
 @app.route('/upload', methods=['GET', 'POST'])
 def upload():
     token = session.get('token')
@@ -144,8 +150,13 @@ def upload():
     except jwt.InvalidTokenError:
         return render_template('login.html', message='Invalid token.'), 401
 
+    # Saving the file to the folder within local machine
     if request.method == 'POST':
         file = request.files['file']
+        if not file:
+            return render_template('upload.html', message='No file selected.'), 400
+        if file.content_length == 0:
+            return render_template('upload.html', message='Empty file selected.'), 400
         if file:
             filename = secure_filename(file.filename)
             if filename.split('.')[-1].lower() not in app.config['ALLOWED_EXTENSIONS']:
@@ -164,6 +175,7 @@ def upload():
             conn.commit()
             cur.close()
 
+            # Make sure token is not saved when logging out or when returning to the page 
             response = make_response(render_template('upload.html', message='File uploaded successfully.'))
             response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
             response.headers['Pragma'] = 'no-cache'
@@ -173,6 +185,7 @@ def upload():
 
     return render_template('upload.html')
 
+# Public endpoint for showing public information
 @app.route('/public')
 def public():
     # Get all unique usernames from the database
@@ -191,11 +204,9 @@ def public():
     return render_template('public.html', uploads=uploads)
 
 
-
 @app.route('/uploads/<filename>')
 def uploaded_file(filename):
     return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
-
 
 
 if __name__ == '__main__':
